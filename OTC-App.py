@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-
+import joblib
 # Load artifacts (preprocessor and classifier)
 @st.cache(allow_output_mutation=True)
 def load_artifacts():
