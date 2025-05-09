@@ -1,136 +1,131 @@
-import os
 import streamlit as st
 import pandas as pd
 import joblib
+import requests
+from io import BytesIO
 
-# ⚙️ Download model artifacts from Google Drive if missing
-import gdown
+# ─── CONFIG ────────────────────────────────────────────────────────────────────
+MODEL_URL = "https://otc-only-model.s3.amazonaws.com/otc_classifier_no_postpain.pkl"
 
-# Map local filenames to Drive URLs (replace FILE_ID_PRE and FILE_ID_CLF with your actual IDs)
-ARTIFACTS = {
-    'otc_classifier_no_postpain.pkl': 'https://drive.google.com/file/d/1ucW1zGVKxPWM0BlpOdnBUEvXizWHDVuK/view?usp=drive_link'
-}
-for fname, url in ARTIFACTS.items():
-    if not os.path.exists(fname):
-        with st.spinner(f"Downloading {fname} from Google Drive..."):
-            gdown.download(url, fname, quiet=False)
-
-# Load artifacts (preprocessor, classifier) and dataset
-@st.cache_resource
+@st.cache(allow_output_mutation=True, show_spinner=False)
 def load_artifacts():
-    pre = joblib.load('otc_preprocessor_no_postpain.pkl')
-    clf = joblib.load('otc_classifier_no_postpain.pkl')
-    df = pd.read_csv('OTC-Data.csv', skipinitialspace=True)
+    otc_pre = joblib.load("otc_preprocessor_no_postpain.pkl")
+    pain_model = joblib.load("pain_reduction_model.pkl")
+    weeks_model = joblib.load("weeks_to_effect_model.pkl")
+
+    r = requests.get(MODEL_URL)
+    r.raise_for_status()
+    otc_model = joblib.load(BytesIO(r.content))
+
+    df = pd.read_csv("OTC-Data.csv", skipinitialspace=True)
     df.columns = df.columns.str.strip()
     df = df.rename(columns={
-        'Best OTC':'best_otc', 'OTCSleep':'otc_sleep', 'OTC Cause':'otc_cause',
-        'OTC PainLocation':'otc_pain_location', 'OTC PainTime':'otc_pain_time',
-        'OTC CocomtSymptom':'otc_cocomt_symptom', 'Gender':'gender',
-        'Age':'age','Height':'height','Weight':'weight',
-        'Ethnicity':'ethnicity','Race':'race'
+        'Best OTC': 'best_otc', 'OTCSleep': 'otc_sleep', 'OTC Cause': 'otc_cause',
+        'OTC PainLocation': 'otc_pain_location', 'OTC PainTime': 'otc_pain_time',
+        'OTC CocomtSymptom': 'otc_cocomt_symptom', 'Gender': 'gender',
+        'Age': 'age', 'Height': 'height', 'Weight': 'weight',
+        'Ethnicity': 'ethnicity', 'Race': 'race'
     })
-    vc = df['best_otc'].value_counts()
-    rare = vc[vc < 5].index
-    df['best_otc'] = df['best_otc'].apply(lambda x: 'Other' if x in rare else x)
-    return pre, clf, df
+    return otc_pre, otc_model, pain_model, weeks_model, df
 
-preprocessor, model, df_full = load_artifacts()
+# Load artifacts
+otc_pre, otc_model, pain_model, weeks_model, df_full = load_artifacts()
 
-# Streamlit UI
-st.title("🏥 OTC Knee Pain Recommender")
+st.title("\U0001F3E5 OTC Knee Pain Recommender")
 
-# Patient Profile
+# ─── PATIENT PROFILE ───────────────────────────────────────────────────────────
 st.header("Patient Profile")
-age = st.text_input("Age", placeholder="Enter your age in years")
-gender_opts = ["", *list(df_full['gender'].unique())]
-gender = st.selectbox("Gender", gender_opts)
-race_opts = ["", *list(df_full['race'].unique())]
-race = st.selectbox("Race", race_opts)
-ethnicity_opts = ["", *list(df_full['ethnicity'].unique())]
-ethnicity = st.selectbox("Hispanic Origin/Ethnicity", ethnicity_opts)
-weight = st.text_input("Weight (lbs)", placeholder="Enter weight in lbs")
-height = st.text_input("Height (inches)", placeholder="Enter height in inches")
+age       = st.text_input("Age", value="", placeholder="Greater than 50 required")
+gender = st.selectbox("Gender", [ "Male", "Female", "Non-binary / third gender", "Prefer not to say"])
+race = st.selectbox("Race", [ "White", "Black or African American", "Asian", "Native American", "Other"])
+ethnicity = st.selectbox("Hispanic Origin/Ethnicity", ["Yes", "No"])
 
-# Pain Level
+weight    = st.text_input("Weight (lbs)", value="", placeholder="e.g. 150")
+height    = st.text_input("Height (inches)", value="", placeholder="e.g. 65")
+
+# ─── PAIN LEVEL ────────────────────────────────────────────────────────────────
 st.header("Pain Level")
-pain_level = st.text_input("Current pain level (1 = low, 10 = high)", placeholder="Enter a number 1–10")
+pain_level = st.text_input("Current pain level (1 = low, 10 = high)", value="", placeholder="Enter 1–10")
 
-# Pain Context
+# ─── CONTEXTUAL FIELDS ─────────────────────────────────────────────────────────
 st.header("Pain Context")
-loc_opts = ["", 'In the front of your knee', 'All over the knee',
-            'Close to the surface above or behind your knee',
-            'Deeper inside your knee', 'In multiple parts of your knee or leg',
-            'None of the above']
-pain_location = st.selectbox("Where do you feel your knee pain?", loc_opts)
+pain_location = st.selectbox("Where do you feel your knee pain?", [
+    "", "In the front of your knee", "All over the knee", "Close to the surface above or behind your knee",
+    "Deeper inside your knee", "In multiple parts of your knee or leg", "None of the above"])
 
-time_opts = ["", 'When you are moving or bending, better with rest',
-             'First thing in the morning when you wake up',
-             'More pain at night after activity', 'During bad weather',
-             'When stressed/anxious/tired', 'When unwell', 'None of the above']
-pain_time = st.selectbox("When do you feel pain?", time_opts)
+pain_time = st.selectbox("When do you feel pain?", [
+    "", "When moving or bending (better with rest)", "First thing in the morning", "More pain at night after activity",
+    "During bad weather", "When stressed/anxious/tired", "When unwell", "None of the above"])
 
-# Accompanying Symptoms
-st.header("Accompanying Symptoms")
-symp_opts = ['', 'Dull pain','Throbbing pain','Sharp pain','Swelling','Stiffness',
-             'Redness and warmth','Instability or weakness','Popping or crunching noises',
-             'Limited range of motion','Locking of the knee joint','Inability to bear weight',
-             'Fever','Disabling pain','Others','None']
+symptoms = st.multiselect("Accompanying symptoms", [
+    "", "Dull pain", "Throbbing pain", "Sharp pain", "Swelling", "Stiffness", "Redness and warmth",
+    "Instability or weakness", "Popping or crunching noises", "Limited range of motion",
+    "Locking of the knee joint", "Inability to bear weight", "Fever", "Disabling pain", "Others", "None"])
 
-symptoms = st.multiselect("Select any that apply:", symp_opts)
-symptom_str = ",".join(symptoms) if symptoms else ""
-
-# Sleep & Other Joint Pain
 st.header("Sleep & Other Joint Pain")
-sleep_opts = ['', 'Abnormal sleep pattern','Pain at other joint(s)','None of the above']
-sleep = st.selectbox("Do you experience any of these?", sleep_opts)
+sleep = st.selectbox("Do you experience any of these?", ["", "Abnormal sleep pattern", "Pain at other joint(s)", "None of the above"])
 
-# Likely Cause of Pain
 st.header("Likely Cause of Pain")
-cause_opts = ['', 'Overweight or obesity','Injuries (ligaments, cartilage, bone fractures)',
-              'Medical conditions (arthritis, gout, infections, tendonitis, bursitis)',
-              'Aging (osteoarthritis)','Repeated stress (overuse)',
-              'Other conditions (patellofemoral pain syndrome, lupus, rheumatoid arthritis)',
-              'None of the above','Don’t know']
-cause = st.selectbox("What caused your knee pain?", cause_opts)
+cause = st.selectbox("What caused your knee pain?", [
+    "", "Overweight or obesity", "Injuries (ligaments/cartilage/bone fractures)",
+    "Medical conditions (arthritis, gout, infections, tendonitis, bursitis)",
+    "Aging (osteoarthritis)", "Repeated stress (overuse)",
+    "Other conditions (patellofemoral syndrome, lupus, rheumatoid arthritis)",
+    "None of the above", "Don’t know"])
 
-# Predict
+# ─── PREDICTION ────────────────────────────────────────────────────────────────
 if st.button("Get OTC Recommendations"):
-    # Validate inputs
-    required = [age, gender, race, ethnicity, weight, height, pain_level,
-                pain_location, pain_time, sleep, cause]
+    required = [age, gender, race, ethnicity, weight, height,
+                pain_level, pain_location, pain_time, sleep, cause]
     if not all(required):
-        st.error("Please fill in all fields before submitting.")
+        st.error("Please fill in every field.")
     else:
-        # Convert numeric
         try:
-            age_val = int(age)
-            weight_val = float(weight)
-            height_val = float(height)
-            pain_val = int(pain_level)
+            age_v = int(age)
+            w_v   = float(weight)
+            h_v   = float(height)
+            pl_v  = int(pain_level)
         except ValueError:
-            st.error("Please enter valid numbers for age, weight, height, and pain level.")
+            st.error("Age, weight, height, and pain level must be numeric.")
+            st.stop()
+        
+        if age_v < 50:
+            st.error("This tool is designed for patients aged 50 and above.")
             st.stop()
 
-        input_df = pd.DataFrame([{  
-            'otc_prepain': pain_val,
-            'age': age_val,
-            'height': height_val,
-            'weight': weight_val,
-            'gender': gender,
-            'race': race,
-            'ethnicity': ethnicity,
+        input_df = pd.DataFrame([{
+            'otc_prepain': pl_v,
+            'age':         age_v,
+            'height':      h_v,
+            'weight':      w_v,
+            'gender':      gender,
+            'race':        race,
+            'ethnicity':   ethnicity,
             'otc_pain_location': pain_location,
-            'otc_pain_time': pain_time,
-            'otc_cocomt_symptom': symptom_str,
-            'otc_sleep': sleep,
-            'otc_cause': cause
+            'otc_pain_time':     pain_time,
+            'otc_cocomt_symptom': ",".join(symptoms) if symptoms else "",
+            'otc_sleep':          sleep,
+            'otc_cause':          cause
         }])
 
-        X_proc = preprocessor.transform(input_df)
-        probs = model.predict_proba(X_proc)[0]
-        classes = model.classes_
-        top_idx = probs.argsort()[-3:][::-1]
+        # OTC prediction
+        Xp = otc_pre.transform(input_df)
+        probs = otc_model.predict_proba(Xp)[0]
+        classes = otc_model.classes_
+        top3 = probs.argsort()[-3:][::-1]
 
         st.subheader("Top 3 OTC Recommendations")
-        for i in top_idx:
-            st.write(f"- **{classes[i]}**")
+        for i in top3:
+            st.write(f"- **{classes[i]}**: { 310*probs[i]:.1f}% confidence")
+
+        # Pain reduction + weeks prediction (top-1 only)
+        try:
+            reg_input = input_df[['otc_prepain', 'age', 'height', 'weight', 'gender', 'ethnicity', 'race']].copy()
+            reg_input['otc_usetime'] = 4  # simulate 4 weeks usage
+
+            predicted_reduction = pain_model.predict(reg_input)[0]
+            predicted_weeks = weeks_model.predict(reg_input)[0]
+
+            st.success(f"\n\n✨ By following the above recommendation, you may reduce your pain by **{predicted_reduction:.1f} points** in about **{predicted_weeks:.1f} weeks**.")
+        except Exception as e:
+            st.warning(f"Could not estimate pain reduction or weeks to effect: {e}")
