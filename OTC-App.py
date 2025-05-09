@@ -36,9 +36,28 @@ st.title("\U0001F3E5 OTC Knee Pain Recommender")
 # ─── PATIENT PROFILE ───────────────────────────────────────────────────────────
 st.header("Patient Profile")
 age       = st.text_input("Age", value="", placeholder="Greater than 50 required")
-gender = st.selectbox("Gender", [ "Male", "Female", "Non-binary / third gender", "Prefer not to say"])
-race = st.selectbox("Race", [ "White", "Black or African American", "Asian", "Native American", "Other"])
-ethnicity = st.selectbox("Hispanic Origin/Ethnicity", ["Yes", "No"])
+gender = st.selectbox(
+    "Gender",
+    options=["Male", "Female", "Non-binary / third gender", "Prefer not to say"],
+    index=None,
+    placeholder="Select gender"
+)
+
+race = st.selectbox(
+    "Race",
+    options=["White", "Black or African American", "Asian", "Native American", "Other"],
+    index=None,
+    placeholder="Select race"
+)
+
+ethnicity = st.selectbox(
+    "Hispanic Origin/Ethnicity",
+    options=["Yes", "No"],
+    index=None,
+    placeholder="Select ethnicity"
+)
+
+
 
 weight    = st.text_input("Weight (lbs)", value="", placeholder="e.g. 150")
 height    = st.text_input("Height (inches)", value="", placeholder="e.g. 65")
