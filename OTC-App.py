@@ -4,6 +4,22 @@ import joblib
 import requests
 from io import BytesIO
 
+st.markdown("""
+    <style>
+    /* Match multiselect tags with dark theme */
+    [data-baseweb="tag"] {
+        background-color: #2c2c2c !important;
+        color: #fff !important;
+        border: 1px solid #444 !important;
+        border-radius: 5px;
+        padding: 2px 6px;
+    }
+    [data-baseweb="tag"] svg {
+        fill: #aaa !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
 MODEL_URL = "https://otc-only-model.s3.amazonaws.com/otc_classifier_no_postpain.pkl"
 
@@ -31,25 +47,16 @@ def load_artifacts():
 # Load artifacts
 otc_pre, otc_model, pain_model, weeks_model, df_full = load_artifacts()
 
-st.title("\U0001F3E5 OTC Knee Pain Recommender")
-
+st.title("AI(Artificial Intelligence) Decision-Making Tool for Over-the-Counter Medications for Knee Joint Pain")
+st.text("This AI decision-making model recommends the best OTC medications for indivduals with knee joint pain.")
 # ─── PATIENT PROFILE ───────────────────────────────────────────────────────────
-st.header("Patient Profile")
-age       = st.text_input("Age", value="", placeholder="Greater than 50 required")
+st.text("Please enter your personal data below:")
+age       = st.text_input("Age", value="", placeholder="Age (50 or older)")
 gender = st.selectbox(
     "Gender",
     options=["Male", "Female", "Non-binary / third gender", "Prefer not to say"],
-    index=None,
-    placeholder="Select gender"
+    index=None
 )
-
-race = st.selectbox(
-    "Race",
-    options=["White", "Black or African American", "Asian", "Native American", "Other"],
-    index=None,
-    placeholder="Select race"
-)
-
 ethnicity = st.selectbox(
     "Hispanic Origin/Ethnicity",
     options=["Yes", "No"],
@@ -57,10 +64,16 @@ ethnicity = st.selectbox(
     placeholder="Select ethnicity"
 )
 
+weight    = st.text_input("Weight (lbs)", value="", placeholder="e.g. 183")
+height    = st.text_input("Height (inches)", value="", placeholder="e.g. 67")
 
+race = st.selectbox(
+    "Race",
+    options=["White", "Black or African American","American Indian or Alaska Native", "Asian", "Native Hawaaiian or Pacific Islander", "Other/Unknown", "Prefer not to say"],
+    index=None,
+    placeholder="Select race"
+)
 
-weight    = st.text_input("Weight (lbs)", value="", placeholder="e.g. 150")
-height    = st.text_input("Height (inches)", value="", placeholder="e.g. 65")
 
 # ─── PAIN LEVEL ────────────────────────────────────────────────────────────────
 st.header("Pain Level")
@@ -135,7 +148,7 @@ if st.button("Get OTC Recommendations"):
 
         st.subheader("Top 3 OTC Recommendations")
         for i in top3:
-            st.write(f"- **{classes[i]}**: { 310*probs[i]:.1f}% confidence")
+            st.write(f"- {classes[i]}: { 310*probs[i]:.1f}% confidence")
 
         # Pain reduction + weeks prediction (top-1 only)
         try:
@@ -145,6 +158,6 @@ if st.button("Get OTC Recommendations"):
             predicted_reduction = pain_model.predict(reg_input)[0]
             predicted_weeks = weeks_model.predict(reg_input)[0]
 
-            st.success(f"\n\n✨ By following the above recommendation, you may reduce your pain by **{predicted_reduction:.1f} points** in about **{predicted_weeks:.1f} weeks**.")
+            st.success(f"\n\n✨ By following {classes[top3[0]]}, you may reduce your pain by **{predicted_reduction:.1f} points** in about **{predicted_weeks:.1f} weeks**.")
         except Exception as e:
             st.warning(f"Could not estimate pain reduction or weeks to effect: {e}")
